@@ -1,21 +1,15 @@
-##### SIMULATION #####
 
-# TWO-SYMPTOM ALLEVIATING INTERVENTIONS (NIRA-style, Li et al. 2024)
-#
-# Step 1  Network based on Li et al.            (edges + thresholds, same for the whole group)
-# Step 2  Original network                      (exact mean number of active symptoms)
-# Step 3  Intervention on two symptoms           (each threshold 1 SD = 2 SD total)
-# Step 4  Compare: difference in mean sum score  
-# Step 5  Repeat for all (120) possible pairs
-# Step 6  Compare with one symptom               (each of 16 symptoms is 2 SD, as in Li et al.)
-
-# Only alleviating interventions (thresholds lowered) investigated
+   # Multi-symptom alleviating interventions in a depression-anxiety network
+   # based on Li et al. (2024), following the logic of NIRA (Lunansky et al., 2022).
+   # Main analyses: total dose of 2 SD split over the targeted symptoms
+   #   (single symptoms, all pairs, stepwise random, stepwise most influential).
+   # Additional analyses: 2 SD per symptom, and a total dose of 4 SD.
 
 ############# STEP 1: the network ####################
 library(qgraph)
 library(ggplot2)
 
-set.seed(2)                    
+                  
 
 # based on Li et al. (2024)
 dep <- c("PHQ1", "PHQ2", "PHQ3", "PHQ4", "PHQ5", "PHQ6", "PHQ7", "PHQ8", "PHQ9")
@@ -71,7 +65,7 @@ tau[c("GAD5", "PHQ9")]                         <- -2.8  # rare         (M < 0.40
 
 tau          # check: all 16 should have a value (no NA)
 
-# Figure 1: the network 
+# Figure : the network 
 qgraph(W, layout = "spring",
        groups = list(Depression = which(is_dep), Anxiety = which(!is_dep)),
        color = c("blue", "red"), labels = nodes, nodeNames = labels_long,
@@ -87,10 +81,10 @@ intervene <- function(thresholds, targets) {
   thresholds
 }
 
-############# STEP 2 :orignial network ####################
+############# STEP 2 :original network ####################
 # Function: EXACT mean number of active symptoms (no randomness, no seed needed)
 # With 16 symptoms there are only 2^16  possible symptom patterns, so we
-# calculate the exact average instead of simulating 5000 people.
+# calculate the exact average instead of simulating individuals
 all_patterns    <- as.matrix(expand.grid(rep(list(0:1), n_nodes)))   # every possible pattern
 n_active        <- rowSums(all_patterns)                             # number of symptoms in each pattern
 connection_part <- rowSums((all_patterns %*% W) * all_patterns) / 2  # effect of the connections per pattern
@@ -130,8 +124,7 @@ rownames(pair_results) <- NULL
 head(pair_results, 10)               # 10 best pairs: most negative difference 
 tail(pair_results, 10)               # 10 worst pairs
 
-# Figure 2: the 10 best and 10 worst pairs, with names (not important for RQ,
-# used to understand network better)
+# Figure : the 10 best and 10 worst pairs, with names 
 top_bottom <- rbind(head(pair_results, 10), tail(pair_results, 10))
 top_bottom$group <- rep(c("10 best", "10 worst"), each = 10)
 ggplot(top_bottom, aes(x = reorder(names, -difference), y = difference, fill = group)) +
@@ -160,7 +153,7 @@ summary_table <- data.frame(
 
 summary_table
 
-# Figure 3: effect of every pair, sorted from best to worst 
+# Figure : effect of every pair, sorted from best to worst 
 pair_results$rank <- 1:nrow(pair_results)               # 1 = best pair
 ggplot(pair_results, aes(x = rank, y = difference)) +
   geom_col(fill = "blue") +
@@ -209,7 +202,7 @@ stepwise_summary <- do.call(rbind, lapply(split(stepwise_results, stepwise_resul
                                                                  spread_sd       = sd(d$difference))))
 rownames(stepwise_summary) <- NULL
 
-# Figure 5: stepwise
+# Figure : stepwise
 ggplot(stepwise_summary, aes(x = n_symptoms, y = mean_difference)) +
   geom_ribbon(aes(ymin = best, ymax = worst), fill = "grey", alpha = 0.2) +  # band = best to worst
   geom_line(colour = "red", linewidth = 1) +
@@ -270,12 +263,7 @@ intervene <- intervene_split                       # switch back to the split ve
 # Each targeted symptom gets the full 2 SD, so treating k symptoms = k x 2 SD in total
 # Our question: how many symptoms must a treatment hit, and where does the improvement level off?
 
-intervene_split <- intervene                       # keep your current (split) version
-intervene <- function(thresholds, targets) {       # full dose: 2 SD for EACH targeted symptom
-  thresholds[targets] <- thresholds[targets] - total_dose * sd(thresholds)
-  thresholds
-}
-
+intervene_split <- intervene                       # store current (split) version
 n_sets <- 100                                       # random symptom sets per k
 
 set.seed(2)
@@ -343,7 +331,7 @@ compare_steps <- rbind(
              difference = influential_results$difference,
              selection  = "most influential symptoms"))
 
-# Figure 6: most influential vs random symptoms
+# Figure : most influential vs random symptoms
 ggplot(compare_steps, aes(x = n_symptoms, y = difference, colour = selection)) +
   geom_ribbon(data = stepwise_summary, inherit.aes = FALSE,
               aes(x = n_symptoms, ymin = best, ymax = worst),
