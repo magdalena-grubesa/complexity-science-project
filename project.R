@@ -12,8 +12,6 @@
 # Only alleviating interventions (thresholds lowered) investigated
 
 ############# STEP 1: the network ####################
-
-library(IsingSampler)
 library(qgraph)
 library(ggplot2)
 
@@ -80,16 +78,7 @@ qgraph(W, layout = "spring",
        legend.cex = 0.4, minimum = 0.1,      # hide the weak 0.1 links
        title = "Network based on Li et al. (2024)")
 
-#settings
-n_people   <- 10000                   # simulated people per condition 
 total_dose <- 2                      # total intervention size in SD (as in Li et al.)
-
-# Function: simulate people and return their sum scores 
-simulate_sum_scores <- function(thresholds) {
-  X <- IsingSampler(n = n_people, graph = W, thresholds = thresholds,
-                    responses = c(0L, 1L), method = "direct")
-  rowSums(X)                         # sum score = number of active symptoms per person
-}
 
 # Function: alleviating intervention. The total dose is split over the targets:
 # 1 symptom -> 2 SD, 2 symptoms -> 1 SD each
@@ -111,8 +100,7 @@ exact_mean <- function(thresholds) {
   sum(p * n_active) / sum(p)                                         # average number of active symptoms
 }
 
-
-original_scores <- simulate_sum_scores(tau)   
+  
 original_mean   <- exact_mean(tau)
 original_mean
 
@@ -250,7 +238,8 @@ pair_results_full <- data.frame()
 for (i in 1:ncol(all_pairs)) {
   pair_results_full <- rbind(pair_results_full, compare_with_original(all_pairs[, i]))
 }
-
+pair_results_full <- pair_results_full[order(pair_results_full$difference), ]
+rownames(pair_results_full) <- NULL
 
 # summary: single symptom (2 SD) vs pair (2 SD each)
 summary_full <- data.frame(
@@ -372,8 +361,6 @@ ggplot(compare_steps, aes(x = n_symptoms, y = difference, colour = selection)) +
 
 intervene  <- intervene_split        # split version
 total_dose <- 4
-
-
 
 
 ############# STEPWISE: total dose of 4SD ####################
