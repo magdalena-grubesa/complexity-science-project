@@ -1,11 +1,10 @@
-
-   # Multi-symptom alleviating interventions in a depression-anxiety network
+# Multi-symptom alleviating interventions in a depression-anxiety network
    # based on Li et al. (2024), following the logic of NIRA (Lunansky et al., 2022).
    # Main analyses: total dose of 2 SD split over the targeted symptoms
    #   (single symptoms, all pairs, stepwise random, stepwise most influential).
    # Additional analyses: 2 SD per symptom, and a total dose of 4 SD.
 
-############# STEP 1: the network ####################
+############# 1. NETWORK (based on Li et al., 2024) ####################
 library(qgraph)
 library(ggplot2)
 
@@ -54,7 +53,7 @@ add_edge("GAD6", "PHQ6", 0.5); add_edge("GAD4", "PHQ4", 0.5)
 ### THRESHOLDS###
 # Not published by Li et al. (2024), so symptoms are grouped by how common they
 # were in their sample (Table 1, item mean M): more common = easier to activate.
-# More negative = harder to switch on. Exact values are arbitrary
+# More negative = harder to switch on. Exact values are our choice;
 # the grouping comes from Li et al.'s Table 1 (M).
 
 tau <- setNames(rep(NA, n_nodes), nodes)
@@ -65,7 +64,7 @@ tau[c("GAD5", "PHQ9")]                         <- -2.8  # rare         (M < 0.40
 
 tau          # check: all 16 should have a value (no NA)
 
-# Figure : the network 
+# Figure: the network
 qgraph(W, layout = "spring",
        groups = list(Depression = which(is_dep), Anxiety = which(!is_dep)),
        color = c("blue", "red"), labels = nodes, nodeNames = labels_long,
@@ -81,7 +80,7 @@ intervene <- function(thresholds, targets) {
   thresholds
 }
 
-############# STEP 2 :original network ####################
+############# 2. FUNCTIONS AND UNTREATED NETWORK ####################
 # Function: EXACT mean number of active symptoms (no randomness, no seed needed)
 # With 16 symptoms there are only 2^16  possible symptom patterns, so we
 # calculate the exact average instead of simulating individuals
@@ -109,7 +108,16 @@ compare_with_original <- function(targets) {
     difference   = mean_after - original_mean)     # negative = improvement
 }
 
-############# STEP 3-5  for all possible pairs####################
+############# 3. SINGLE SYMPTOMS (2 SD each, as in Li et al.) ####################
+single_results <- data.frame()
+for (s in nodes) single_results <- rbind(single_results, compare_with_original(s))
+single_results <- single_results[order(single_results$difference), ]
+rownames(single_results) <- NULL
+
+single_results
+
+
+############# 4. ALL 120 PAIRS (total 2 SD = 1 SD each) ####################
 
 all_pairs <- combn(nodes, 2)         # 2 x 120 matrix: every pair of symptoms
 ncol(all_pairs)                      # = 120
@@ -124,7 +132,7 @@ rownames(pair_results) <- NULL
 head(pair_results, 10)               # 10 best pairs: most negative difference 
 tail(pair_results, 10)               # 10 worst pairs
 
-# Figure : the 10 best and 10 worst pairs, with names 
+# Figure: the 10 best and 10 worst pairs, with names
 top_bottom <- rbind(head(pair_results, 10), tail(pair_results, 10))
 top_bottom$group <- rep(c("10 best", "10 worst"), each = 10)
 ggplot(top_bottom, aes(x = reorder(names, -difference), y = difference, fill = group)) +
@@ -134,16 +142,7 @@ ggplot(top_bottom, aes(x = reorder(names, -difference), y = difference, fill = g
        title = "Best and worst symptom pairs") +
   theme_minimal()
 
-############# STEP 6: single symptom ####################
-single_results <- data.frame()
-for (s in nodes) single_results <- rbind(single_results, compare_with_original(s))
-single_results <- single_results[order(single_results$difference), ]
-rownames(single_results) <- NULL
-
-single_results
-
-
-############# SUMMARY####################
+############# 5. SUMMARY: SINGLE SYMPTOMS VS PAIRS ####################
 summary_table <- data.frame(
   intervention    = c("1 symptom (2 SD)", "2 symptoms (1 SD each)"),
   number_tested   = c(nrow(single_results), nrow(pair_results)),
@@ -153,7 +152,7 @@ summary_table <- data.frame(
 
 summary_table
 
-# Figure : effect of every pair, sorted from best to worst 
+# Figure: effect of every pair, sorted from best to worst
 pair_results$rank <- 1:nrow(pair_results)               # 1 = best pair
 ggplot(pair_results, aes(x = rank, y = difference)) +
   geom_col(fill = "blue") +
@@ -170,7 +169,7 @@ best_single <- min(single_results$difference)
 sum(pair_results$difference < best_single)
 
 
-############# STEPWISE ####################
+############# 6. STEPWISE: RANDOM SYMPTOMS (total 2 SD) ####################
 # Same total dose (2 SD) split over k symptoms: k = 1 -> 2 SD, k = 4 -> 0.5 SD each, ...
 # For each k we test up to 'n_sets' different random symptom sets
 # (for k = 1, 15 and 16 there are only 16, 16 and 1 possible sets, so all are used).
@@ -202,7 +201,7 @@ stepwise_summary <- do.call(rbind, lapply(split(stepwise_results, stepwise_resul
                                                                  spread_sd       = sd(d$difference))))
 rownames(stepwise_summary) <- NULL
 
-# Figure : stepwise
+# Figure: stepwise, random symptoms
 ggplot(stepwise_summary, aes(x = n_symptoms, y = mean_difference)) +
   geom_ribbon(aes(ymin = best, ymax = worst), fill = "grey", alpha = 0.2) +  # band = best to worst
   geom_line(colour = "red", linewidth = 1) +
@@ -216,7 +215,47 @@ ggplot(stepwise_summary, aes(x = n_symptoms, y = mean_difference)) +
 
 
 
-############# 2 SD PER SYMPTOM (pairs get 4 SD in total) ####################
+############# 7. STEPWISE: MOST INFLUENTIAL SYMPTOMS (total 2 SD) ####################
+# Symptoms are added in order of influence (from section 3: single_results, best first):
+# k = 1 -> most influential symptom, k = 2 -> top 2,..k = 16 -> all symptoms
+# Same total dose (2 SD) split over the k symptoms, as in the random stepwise
+
+ranking <- single_results$targets                  # symptom codes, most influential first
+ranking
+
+influential_results <- data.frame()
+for (k in 1:n_nodes) {
+  top_k <- ranking[1:k]                            # the k most influential symptoms
+  influential_results <- rbind(influential_results, compare_with_original(top_k))
+}
+influential_results                                # which symptoms were added, and the effect
+
+# Combine with the random stepwise results for one figure
+compare_steps <- rbind(
+  data.frame(n_symptoms = stepwise_summary$n_symptoms,
+             difference = stepwise_summary$mean_difference,
+             selection  = "random symptoms (average)"),
+  data.frame(n_symptoms = influential_results$n_symptoms,
+             difference = influential_results$difference,
+             selection  = "most influential symptoms"))
+
+# Figure: most influential vs random symptoms
+ggplot(compare_steps, aes(x = n_symptoms, y = difference, colour = selection)) +
+  geom_ribbon(data = stepwise_summary, inherit.aes = FALSE,
+              aes(x = n_symptoms, ymin = best, ymax = worst),
+              fill = "grey", alpha = 0.2) +        # band = best to worst random set
+  geom_line(linewidth = 1) + geom_point(size = 2) +
+  scale_colour_manual(values = c("most influential symptoms" = "darkblue",
+                                 "random symptoms (average)" = "red")) +
+  scale_x_continuous(breaks = 1:n_nodes) +
+  labs(x = "Number of symptoms treated (same total dose of 2 SD, split equally)",
+       y = "Change in mean sum score",
+       colour = NULL,
+       title = "Stepwise: most influential vs random symptoms",
+       subtitle = "Grey band = best to worst random set") +
+  theme_minimal() + theme(legend.position = "bottom")
+
+############# 8. ADDITIONAL: PAIRS WITH 2 SD PER SYMPTOM (4 SD in total) ####################
 # Same analysis as before, but every targeted symptom gets the full dose of treatment (2 SD)
 # So a pair receives twice as much treatment as a single symptom
 
@@ -259,11 +298,15 @@ ggplot(pair_results_full, aes(x = rank, y = difference)) +
 
 intervene <- intervene_split                       # switch back to the split version
 
-############# STEPWISE: 2 SD PER SYMPTOM  ####################
+############# 9. ADDITIONAL: STEPWISE WITH 2 SD PER SYMPTOM ####################
 # Each targeted symptom gets the full 2 SD, so treating k symptoms = k x 2 SD in total
 # Our question: how many symptoms must a treatment hit, and where does the improvement level off?
 
 intervene_split <- intervene                       # store current (split) version
+intervene <- function(thresholds, targets) {       # full dose: 2 SD for EACH targeted symptom
+  thresholds[targets] <- thresholds[targets] - total_dose * sd(thresholds)
+  thresholds
+}
 n_sets <- 100                                       # random symptom sets per k
 
 set.seed(2)
@@ -307,51 +350,11 @@ ggplot(stepwise_summary_full, aes(x = n_symptoms, y = mean_difference)) +
 intervene <- intervene_split                       # switch back to the split version again
 
 
-############# STEPWISE: MOST INFLUENTIAL SYMPTOMS ####################
-# Symptoms are added in order of influence (from Step 6: single_results, best first):
-# k = 1 -> most influential symptom, k = 2 -> top 2,..k = 16 -> all symptoms
-# Same total dose (2 SD) split over the k symptoms, as in the random stepwise
-
-ranking <- single_results$targets                  # symptom codes, most influential first
-ranking
-
-influential_results <- data.frame()
-for (k in 1:n_nodes) {
-  top_k <- ranking[1:k]                            # the k most influential symptoms
-  influential_results <- rbind(influential_results, compare_with_original(top_k))
-}
-influential_results                                # which symptoms were added, and the effect
-
-# Combine with the random stepwise results for one figure
-compare_steps <- rbind(
-  data.frame(n_symptoms = stepwise_summary$n_symptoms,
-             difference = stepwise_summary$mean_difference,
-             selection  = "random symptoms (average)"),
-  data.frame(n_symptoms = influential_results$n_symptoms,
-             difference = influential_results$difference,
-             selection  = "most influential symptoms"))
-
-# Figure : most influential vs random symptoms
-ggplot(compare_steps, aes(x = n_symptoms, y = difference, colour = selection)) +
-  geom_ribbon(data = stepwise_summary, inherit.aes = FALSE,
-              aes(x = n_symptoms, ymin = best, ymax = worst),
-              fill = "grey", alpha = 0.2) +        # band = best to worst random set
-  geom_line(linewidth = 1) + geom_point(size = 2) +
-  scale_colour_manual(values = c("most influential symptoms" = "darkblue",
-                                 "random symptoms (average)" = "red")) +
-  scale_x_continuous(breaks = 1:n_nodes) +
-  labs(x = "Number of symptoms treated (same total dose of 2 SD, split equally)",
-       y = "Change in mean sum score",
-       colour = NULL,
-       title = "Stepwise: most influential vs random symptoms",
-       subtitle = "Grey band = best to worst random set") +
-  theme_minimal() + theme(legend.position = "bottom")
-
-intervene  <- intervene_split        # split version
-total_dose <- 4
+intervene  <- intervene_split        # back to the split version
+total_dose <- 4                      # total dose of 4 SD from here on
 
 
-############# STEPWISE: total dose of 4SD ####################
+############# 10. ADDITIONAL: STEPWISE WITH A TOTAL DOSE OF 4 SD ####################
 set.seed(2)
 stepwise_results_4sd <- data.frame()
 for (k in 1:n_nodes) {
